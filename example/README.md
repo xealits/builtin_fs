@@ -16,15 +16,23 @@ The resulting directory is a CMake subdirectory:
 $ tree my_builtin_fs/
 my_builtin_fs/
 ├── CMakeLists.txt
-├── FileBuffer.hpp
-├── fs.hpp
-└── images
+└── my_builtin_fs
     ├── CMakeLists.txt
     ├── fs.hpp
-    └── wall_small_jpg.cpp
+    ├── images
+    │   ├── CMakeLists.txt
+    │   ├── fs.hpp
+    │   └── wall_small_jpg.cpp
+    └── type_aliases.hpp
 
-2 directories, 6 files
+3 directories, 7 files
 ```
+
+The outer `my_builtin_fs` contains no headers or sources. It serves to isolate
+the include paths for the inner `my_builtin_fs` directory that contains all the
+sources. The outer directory is added as an include directory to the targets
+in the inner `my_builtin_fs`. So that the include paths are not poluted with
+extra files.
 
 The CMake projects uses its targets as in `CMakeLists.txt`:
 ```cmake
@@ -44,10 +52,9 @@ It creates an `OBJECT` lib target for each file, and a `STATIC` for file groups.
 Each subdirectory has a corresponding `STATIC` library that includes the object
 files from the directory and all its descendants.
 
-The targets have the root directory of the `builtin_fs` added as `PUBLIC`
-by a `target_include_directories` call, and the parent of the root directory is
-added as well. So, the source of the `test` target includes the headers as in
-`test.cpp`:
+The targets have the outer `my_builtin_fs` directory added as `PUBLIC`
+by a `target_include_directories` call. So, the source of the `test` target
+includes the headers as in `test.cpp`:
 ```cpp
 // test.cpp
 #include <iostream>
@@ -55,18 +62,28 @@ added as well. So, the source of the `test` target includes the headers as in
 
 int main() {
   auto& a_file = my_builtin_fs::images::wall_small_jpg;
-  std::cout << "file size: " << a_file.n_bytes << "\n";
-  std::cout << "contents byte: " << (unsigned) a_file.data[0] << "\n";
+
+  {
+    // structured binding
+    auto [data, n_bytes] = a_file;
+    std::cout << "file size: " << n_bytes << "\n";
+    std::cout << "contents byte: " << (unsigned) data[0] << "\n";
+  }
+
+  {
+    // but I don't like that the user has no handle to ensure the types
+    auto* data = a_file.first;
+    //size_t n_bytes = a_file.first;
+    size_t n_bytes = a_file.second;
+    std::cout << "file size: " << n_bytes << "\n";
+    std::cout << "contents byte: " << (unsigned) data[0] << "\n";
+  }
 }
 ```
 
-Something to cleanup for the case of several directories, the include paths
-also find these:
-```
-#include "images/fs.hpp"
-#include "fs.hpp"
-#include "FileBuffer.hpp"
-```
+The underlying data is stored in standard types: `std::pair`, `unsigned char*`
+and `size_t`. The namespaces only alias the `std::pair`. So, you can create
+multiple `builtin_fs` instances, and the types will cooperate.
 
 CMake builds it as usual:
 ```
@@ -84,11 +101,11 @@ file size: 30482
 contents byte: 255
 ```
 
-The sizes of binaries and the source file:
+The sizes of the binaries and the source file:
 ```
-$ du -sh images/wall_small.jpg my_builtin_fs/images/wall_small_jpg.cpp build/my_builtin_fs/images/libmy_builtin_fs__images.a build/my_builtin_fs/images/CMakeFiles/my_builtin_fs__images.dir/wall_small_jpg.cpp.o
+$ du -sh images/wall_small.jpg my_builtin_fs/my_builtin_fs/images/wall_small_jpg.cpp build/my_builtin_fs/my_builtin_fs/images/CMakeFiles/my_builtin_fs__images.dir/wall_small_jpg.cpp.o build/my_builtin_fs/my_builtin_fs/images/libmy_builtin_fs__images.a 
 32K	images/wall_small.jpg
-180K	my_builtin_fs/images/wall_small_jpg.cpp
-32K	build/my_builtin_fs/images/libmy_builtin_fs__images.a
-32K	build/my_builtin_fs/images/CMakeFiles/my_builtin_fs__images.dir/wall_small_jpg.cpp.o
+180K	my_builtin_fs/my_builtin_fs/images/wall_small_jpg.cpp
+32K	build/my_builtin_fs/my_builtin_fs/images/CMakeFiles/my_builtin_fs__images.dir/wall_small_jpg.cpp.o
+32K	build/my_builtin_fs/my_builtin_fs/images/libmy_builtin_fs__images.a
 ```

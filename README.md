@@ -22,4 +22,4 @@ unsigned char *image_data =
 
 It is handy in Emscripten WASM builds for Web.
 
-An usage example is in `example/`.
+A demo example is in `example/`.
