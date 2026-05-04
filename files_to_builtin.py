@@ -9,6 +9,10 @@ from pprint import pprint
 import tomllib
 
 
+# TODO: I use the parent directory of the builtin_fs for includes,
+# so that the header paths do not collide for the user.
+# But this polutes the include space with whatver is in that parent directory.
+# I need to add one more layer for clean separation of the include directories.
 cmakelists_root = """# top-level CMakeLists.txt with the builtin_fs functions
 
 get_filename_component(ROOT_DIR_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
@@ -17,20 +21,20 @@ message(STATUS "${PROJECT_NAME} > builtin_fs root dir name is ${ROOT_DIR_NAME}")
 set(ROOT_NAMESPACE_NAME ${ROOT_DIR_NAME})
 message(STATUS "${ROOT_DIR_NAME} > configured root namespace name ${ROOT_NAMESPACE_NAME}")
 
-# add_compile_definitions(BUILTIN_FS_ROOT_NAME=${ROOT_NAMESPACE_NAME})
-
-#set(PROJECT_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR})
-cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH PROJECT_INCLUDE_DIRS)
-list(APPEND PROJECT_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR})
-message(STATUS "${ROOT_DIR_NAME} > include dir ${PROJECT_INCLUDE_DIRS}")
-
-set(CURRENT_FS_DIR_PATH "${ROOT_NAMESPACE_NAME}")
-set(NESTING_LEVEL 0)
+#cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH PROJECT_INCLUDE_DIR)
+set(PROJECT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+message(STATUS "${ROOT_DIR_NAME} > include dir ${PROJECT_INCLUDE_DIR}")
 
 function(set_current_fs_dir_path)
-  # nested sibdir names are used in the target names
-  get_filename_component(subdir_name ${CMAKE_CURRENT_SOURCE_DIR} NAME)
-  set(CURRENT_FS_DIR_PATH "${CURRENT_FS_DIR_PATH}__${subdir_name}" PARENT_SCOPE)
+  if(NOT DEFINED CURRENT_FS_DIR_PATH)
+    set(CURRENT_FS_DIR_PATH "${ROOT_NAMESPACE_NAME}" PARENT_SCOPE)
+    set(NESTING_LEVEL 0 PARENT_SCOPE)
+
+  else()
+    # nested sibdir names are used in the target names
+    get_filename_component(subdir_name ${CMAKE_CURRENT_SOURCE_DIR} NAME)
+    set(CURRENT_FS_DIR_PATH "${CURRENT_FS_DIR_PATH}__${subdir_name}" PARENT_SCOPE)
+  endif()
 endfunction()
 
 function(create_static_libs_from_cpp) # DIR_PATH CURRENT_FS_DIR_PATH)
@@ -52,7 +56,7 @@ function(create_static_libs_from_cpp) # DIR_PATH CURRENT_FS_DIR_PATH)
 
     # BUILTIN FS object lib for the file contents
     add_library(${target_name} OBJECT ${cpp_file})
-    target_include_directories(${target_name} PUBLIC ${PROJECT_INCLUDE_DIRS})
+    target_include_directories(${target_name} PUBLIC ${PROJECT_INCLUDE_DIR})
     set_target_properties(${target_name} PROPERTIES EXCLUDE_FROM_ALL TRUE)
     list(APPEND sublib_sources ${cpp_file})
 
@@ -91,13 +95,23 @@ function(create_static_libs_from_cpp) # DIR_PATH CURRENT_FS_DIR_PATH)
 
   # BUILTIN FS static lib for a directory tree (directory and subdirectories)
   add_library(${CURRENT_FS_DIR_PATH} STATIC ${sublib_sources})
-  target_include_directories(${CURRENT_FS_DIR_PATH} PUBLIC ${PROJECT_INCLUDE_DIRS})
+  target_include_directories(${CURRENT_FS_DIR_PATH} PUBLIC ${PROJECT_INCLUDE_DIR})
   set_target_properties(${CURRENT_FS_DIR_PATH} PROPERTIES EXCLUDE_FROM_ALL TRUE)
   message(STATUS "${ROOT_DIR_NAME} ${nesting_spaces}> added a builtin FS STATIC library ${CURRENT_FS_DIR_PATH} out of all subdir sources")
 
 endfunction()
 
-create_static_libs_from_cpp()
+#create_static_libs_from_cpp()
+# there must be a subdirectory with the same name as the main one
+# this nesting is made to isolate the include paths
+set(subdir_name ${ROOT_DIR_NAME})
+set(subdir_path ${CMAKE_CURRENT_SOURCE_DIR}/${ROOT_DIR_NAME})
+
+if(NOT IS_DIRECTORY ${subdir_path} OR NOT EXISTS "${subdir_path}/CMakeLists.txt")
+  message(FATAL_ERROR "${ROOT_DIR_NAME} > unexpectedly did not find correct ${subdir_path}")
+endif()
+
+add_subdirectory(${subdir_path})
 """
 
 cmakelists_subdir = """set_current_fs_dir_path()
@@ -291,6 +305,10 @@ def nested_sources_to_builtin_fs(source_root_dir: Path, sources_dict: dict, buil
     corresponding declaration was passed) or an existing file was removed.
     In those cases, the CMakeLists.txt date is updated, so CMake reconfigures
     its targets, picks up a new file or removes an existing target.
+
+    It does not touch subdirectories that are not in the source_root_dir. So,
+    you can use different TOML files for different definitions. Not sure if it
+    is really useful now.
     """
 
     if not builtin_fs_dir.exists():
@@ -375,21 +393,10 @@ def nested_sources_to_builtin_fs(source_root_dir: Path, sources_dict: dict, buil
     # create the CMakeLists.txt only in subdirectories
     # TODO: also get rid of it when CMake is ra-arranged
     cmake_lists_path = builtin_fs_dir / "CMakeLists.txt"
-    if len(nesting_dirs) == 0:
-        cmakelists_content = cmakelists_root
-    else:
-        cmakelists_content = cmakelists_subdir
-
     if not cmake_lists_path.exists() or overwrite_cmake:
         logging.info(f"writing {cmake_lists_path}")
         with open(cmake_lists_path, 'w') as cmake_lists_file:
-            cmake_lists_file.write(cmakelists_content)
-
-        # at the top level, also write the header files
-        if len(nesting_dirs) == 0:
-            with open(builtin_fs_dir / "type_aliases.hpp", 'w') as header_fbuf:
-                header = builtin_fs_include_type_aliases.format(root_name = root_name)
-                header_fbuf.write(header)
+            cmake_lists_file.write(cmakelists_subdir)
 
     elif changed_def_files:
         logging.info(f"updating date on {cmake_lists_path}")
@@ -500,7 +507,29 @@ def main():
     #    #pprint(sources_dict, stream=f)
     #    print(f"Output written to {output_path}")
 
-    nested_sources_to_builtin_fs(source_dir_root, sources_dict, output_dir, root_name, args.overwrite_cmake, args.overwrite_definitions)
+    # create the wrapping isolation directory
+    cmake_lists_path = output_dir / "CMakeLists.txt"
+    isolated_dir = output_dir / root_name
+    if not cmake_lists_path.exists() or args.overwrite_cmake:
+        logging.info(f"writing the top level {cmake_lists_path}")
+        with open(cmake_lists_path, 'w') as cmake_lists_file:
+            cmake_lists_file.write(cmakelists_root)
+
+        logging.info(f"writing type_aliases.hpp in the isolated dir")
+
+        if not isolated_dir.exists():
+            isolated_dir.mkdir(parents=True, exist_ok=True)
+            logging.info(f"done mkdir {isolated_dir}")
+
+        else:
+            assert isolated_dir.is_dir()
+
+        with open(isolated_dir / "type_aliases.hpp", 'w') as header_fbuf:
+            header = builtin_fs_include_type_aliases.format(root_name = root_name)
+            header_fbuf.write(header)
+
+    # create the inner contents directory
+    nested_sources_to_builtin_fs(source_dir_root, sources_dict, isolated_dir, root_name, args.overwrite_cmake, args.overwrite_definitions)
 
 if __name__ == "__main__":
     main()
