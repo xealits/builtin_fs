@@ -108,24 +108,14 @@ message(STATUS "${ROOT_DIR_NAME} ${nesting_spaces}> set ${CURRENT_FS_DIR_PATH}")
 create_static_libs_from_cpp(${NESTING_LEVEL})
 """
 
-builtin_fs_include_filebuffer = """#pragma once
+builtin_fs_include_type_aliases = """#pragma once
 #include <cstddef>
+#include <utility>
 
+namespace {root_name} {{
 using FileContentType = unsigned char;
-
-struct FileBuffer {
-    FileContentType* const data;
-    size_t n_bytes;
-};
-"""
-
-builtin_fs_include_definitions = """#pragma once
-
-#ifndef BUILTIN_FS_ROOT_NAME
-#define BUILTIN_FS_ROOT_NAME builtin_fs
-#endif
-
-#include "FileBuffer.hpp"
+using FileBuffer = std::pair<FileContentType* const, size_t>;
+}};
 """
 
 def load_builtin_fs_toml(directory, toml_file):
@@ -224,9 +214,9 @@ def builtin_file_declaration(fpaths: list, nesting_dirs: list = []):
 
     return [declarations_str]
 
-template_definition_file = """#include "FileBuffer.hpp"
+template_definition_file = """#include "{root_name}/type_aliases.hpp"
 
-static FileContentType content_[] = {{
+static {root_name}::FileContentType content_[] = {{
 {content}
 }};
 static constexpr size_t file_size_ = sizeof(content_) / sizeof(content_[0]);
@@ -242,10 +232,7 @@ namespace {root_name} {{
 # even though, the declaration in the header is still const
 # it somehow does link up in the test
 template_file_variable_definition = """
-FileBuffer {var_name}{{
-  .data = content_,
-  .n_bytes = file_size_
-}};
+FileBuffer {var_name}{{ content_, file_size_ }};
 """
 
 def builtin_file_nested_definition(fpath: Path):
@@ -280,7 +267,7 @@ def builtin_file_definition(fpath: Path, root_name: str):
     return full_def
 
 template_declaration_file = """#pragma once
-#include "FileBuffer.hpp"
+#include "{root_name}/type_aliases.hpp"
 
 namespace {root_name} {{
 {declarations}
@@ -400,10 +387,9 @@ def nested_sources_to_builtin_fs(source_root_dir: Path, sources_dict: dict, buil
 
         # at the top level, also write the header files
         if len(nesting_dirs) == 0:
-            #with open(builtin_fs_dir / "definitions.hpp", 'w') as header_defs:
-            #    header_defs.write(builtin_fs_include_definitions)
-            with open(builtin_fs_dir / "FileBuffer.hpp", 'w') as header_fbuf:
-                header_fbuf.write(builtin_fs_include_filebuffer)
+            with open(builtin_fs_dir / "type_aliases.hpp", 'w') as header_fbuf:
+                header = builtin_fs_include_type_aliases.format(root_name = root_name)
+                header_fbuf.write(header)
 
     elif changed_def_files:
         logging.info(f"updating date on {cmake_lists_path}")
