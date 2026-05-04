@@ -45,8 +45,9 @@ Each subdirectory has a corresponding `STATIC` library that includes the object
 files from the directory and all its descendants.
 
 The targets have the root directory of the `builtin_fs` added as `PUBLIC`
-by a `target_include_directories` call. So, the source of the `test` target
-includes the headers as in `test.cpp`:
+by a `target_include_directories` call, and the parent of the root directory is
+added as well. So, the source of the `test` target includes the headers as in
+`test.cpp`:
 ```cpp
 // test.cpp
 #include <iostream>
@@ -57,6 +58,14 @@ int main() {
   std::cout << "file size: " << a_file.n_bytes << "\n";
   std::cout << "contents byte: " << (unsigned) a_file.data[0] << "\n";
 }
+```
+
+Something to cleanup for the case of several directories, the include paths
+also find these:
+```
+#include "images/fs.hpp"
+#include "fs.hpp"
+#include "FileBuffer.hpp"
 ```
 
 CMake builds it as usual:

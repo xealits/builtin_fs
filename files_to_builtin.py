@@ -10,16 +10,19 @@ import tomllib
 
 
 cmakelists_root = """# top-level CMakeLists.txt with the builtin_fs functions
-set(PROJECT_NAME "builtin_fs")
-get_filename_component(ROOT_DIR_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
-message(STATUS "${PROJECT_NAME} > root dir name is ${ROOT_DIR_NAME}")
-set(PROJECT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-message(STATUS "${PROJECT_NAME} > include dir ${PROJECT_INCLUDE_DIR}")
 
+get_filename_component(ROOT_DIR_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
+message(STATUS "${PROJECT_NAME} > builtin_fs root dir name is ${ROOT_DIR_NAME}")
 #option(ROOT_NAMESPACE_NAME "set the name of the builtin_fs root namespace" ${ROOT_DIR_NAME})
 set(ROOT_NAMESPACE_NAME ${ROOT_DIR_NAME})
-add_compile_definitions(BUILTIN_FS_ROOT_NAME=${ROOT_NAMESPACE_NAME})
-message(STATUS "${PROJECT_NAME} > configured root namespace name ${ROOT_NAMESPACE_NAME}")
+message(STATUS "${ROOT_DIR_NAME} > configured root namespace name ${ROOT_NAMESPACE_NAME}")
+
+# add_compile_definitions(BUILTIN_FS_ROOT_NAME=${ROOT_NAMESPACE_NAME})
+
+#set(PROJECT_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR})
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH PROJECT_INCLUDE_DIRS)
+list(APPEND PROJECT_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR})
+message(STATUS "${ROOT_DIR_NAME} > include dir ${PROJECT_INCLUDE_DIRS}")
 
 set(CURRENT_FS_DIR_PATH "${ROOT_NAMESPACE_NAME}")
 set(NESTING_LEVEL 0)
@@ -32,14 +35,14 @@ endfunction()
 
 function(create_static_libs_from_cpp) # DIR_PATH CURRENT_FS_DIR_PATH)
   string(REPEAT "  " ${NESTING_LEVEL} nesting_spaces)
-  message(STATUS "${PROJECT_NAME} ${nesting_spaces}> getting targets in ${CMAKE_CURRENT_SOURCE_DIR}")
+  message(STATUS "${ROOT_DIR_NAME} ${nesting_spaces}> getting targets in ${CMAKE_CURRENT_SOURCE_DIR}")
 
   file(GLOB cpp_files RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.cpp")
   set(sublib_sources "")
 
   foreach(cpp_file ${cpp_files})
     if(${cpp_file} STREQUAL "test.cpp")
-      message(STATUS "${PROJECT_NAME} ${nesting_spaces}> skipping test.cpp")
+      message(STATUS "${ROOT_DIR_NAME} ${nesting_spaces}> skipping test.cpp")
       continue()
     endif()
 
@@ -49,16 +52,16 @@ function(create_static_libs_from_cpp) # DIR_PATH CURRENT_FS_DIR_PATH)
 
     # BUILTIN FS object lib for the file contents
     add_library(${target_name} OBJECT ${cpp_file})
-    target_include_directories(${target_name} PUBLIC ${PROJECT_INCLUDE_DIR})
+    target_include_directories(${target_name} PUBLIC ${PROJECT_INCLUDE_DIRS})
     set_target_properties(${target_name} PROPERTIES EXCLUDE_FROM_ALL TRUE)
     list(APPEND sublib_sources ${cpp_file})
 
-    message(STATUS "${PROJECT_NAME} ${nesting_spaces}> added a builtin FS target ${target_name}")
+    message(STATUS "${ROOT_DIR_NAME} ${nesting_spaces}> added a builtin FS target ${target_name}")
   endforeach()
 
   # add possible targets in sub-directories
   file(GLOB SUBDIRS LIST_DIRECTORIES true RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/*)
-  message(STATUS "${PROJECT_NAME} ${nesting_spaces}> looking at subdirs in ${CMAKE_CURRENT_SOURCE_DIR}")
+  message(STATUS "${ROOT_DIR_NAME} ${nesting_spaces}> looking at subdirs in ${CMAKE_CURRENT_SOURCE_DIR}")
   foreach(subdir_name ${SUBDIRS})
     set(subdir_path ${CMAKE_CURRENT_SOURCE_DIR}/${subdir_name})
 
@@ -70,14 +73,14 @@ function(create_static_libs_from_cpp) # DIR_PATH CURRENT_FS_DIR_PATH)
       continue()
     endif()
 
-    message(STATUS "${PROJECT_NAME} ${nesting_spaces}> looking at ${subdir_path}")
+    message(STATUS "${ROOT_DIR_NAME} ${nesting_spaces}> looking at ${subdir_path}")
     add_subdirectory(${subdir_path})
 
     # check if a target was added
     get_filename_component(subdir_name ${subdir_path} NAME)
     set(subdir_target_name ${CURRENT_FS_DIR_PATH}__${subdir_name})
     if(TARGET ${subdir_target_name})
-      message(STATUS "${PROJECT_NAME} ${nesting_spaces}> adding targets objects from ${subdir_target_name}")
+      message(STATUS "${ROOT_DIR_NAME} ${nesting_spaces}> adding targets objects from ${subdir_target_name}")
 
       get_target_property(SUBDIR_SOURCES ${subdir_target_name} SOURCES)
       foreach(SOURCE ${SUBDIR_SOURCES})
@@ -88,9 +91,9 @@ function(create_static_libs_from_cpp) # DIR_PATH CURRENT_FS_DIR_PATH)
 
   # BUILTIN FS static lib for a directory tree (directory and subdirectories)
   add_library(${CURRENT_FS_DIR_PATH} STATIC ${sublib_sources})
-  target_include_directories(${CURRENT_FS_DIR_PATH} PUBLIC ${PROJECT_INCLUDE_DIR})
+  target_include_directories(${CURRENT_FS_DIR_PATH} PUBLIC ${PROJECT_INCLUDE_DIRS})
   set_target_properties(${CURRENT_FS_DIR_PATH} PROPERTIES EXCLUDE_FROM_ALL TRUE)
-  message(STATUS "${PROJECT_NAME} ${nesting_spaces}> added a builtin FS STATIC library ${CURRENT_FS_DIR_PATH} out of all subdir sources")
+  message(STATUS "${ROOT_DIR_NAME} ${nesting_spaces}> added a builtin FS STATIC library ${CURRENT_FS_DIR_PATH} out of all subdir sources")
 
 endfunction()
 
@@ -100,7 +103,7 @@ create_static_libs_from_cpp()
 cmakelists_subdir = """set_current_fs_dir_path()
 math(EXPR NESTING_LEVEL "${NESTING_LEVEL} + 1")
 string(REPEAT "  " ${NESTING_LEVEL} nesting_spaces)
-message(STATUS "${PROJECT_NAME} ${nesting_spaces}> set ${CURRENT_FS_DIR_PATH}")
+message(STATUS "${ROOT_DIR_NAME} ${nesting_spaces}> set ${CURRENT_FS_DIR_PATH}")
 
 create_static_libs_from_cpp(${NESTING_LEVEL})
 """
