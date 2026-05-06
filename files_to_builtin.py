@@ -132,10 +132,11 @@ using FileBuffer = std::pair<FileContentType* const, size_t>;
 }};
 """
 
-def load_builtin_fs_toml(directory, toml_file):
-    toml_path = Path(directory) / toml_file
+def load_builtin_fs_toml(toml_path: Path):
+    logging.debug(f"load_builtin_fs_toml({toml_path})")
+
     if not toml_path.exists():
-        raise FileNotFoundError(f"{toml_file} not found in {directory}")
+        raise FileNotFoundError(f"{toml_path} not found")
 
     with open(toml_path, "rb") as f:
         return tomllib.load(f)
@@ -419,27 +420,13 @@ def sources_to_builtin_fs(source_paths: list, builtin_fs_dir: Path):
 
 def main():
     parser = argparse.ArgumentParser(description="Convert source files into builtin_fs .cpp")
-    parser.add_argument("sources_directory", type=str, help="Path to the sources")
-
-    parser.add_argument(
-        "--config",
-        type=str,
-        default=".builtin_fs.toml",
-        help="Name of the TOML file (default: .builtin_fs.toml)"
-    )
+    parser.add_argument("config_toml", type=str, help="Path to the TOML config file or a directory that contains .builtin_fs.toml")
 
     parser.add_argument(
         "--builtin-fs",
         type=str,
         default=None,
-        help="Directory for a standalone builtin_fs"
-    )
-
-    parser.add_argument(
-        "--namespace-name",
-        type=str,
-        default="builtin_fs",
-        help="Alternative use-case: directory for a builtin_fs in the source tree"
+        help="Override the directory for the builtin_fs (defined in the TOML or builtin_fs by default)"
     )
 
     parser.add_argument(
@@ -455,7 +442,7 @@ def main():
     )
 
     parser.add_argument(
-        "--debug",
+        "-d", "--debug",
         action='store_true',
         help="Debug log level"
     )
@@ -469,33 +456,48 @@ def main():
         logging.basicConfig(level=logging.INFO)
 
     # Determine where is the TOML config
-    dir_path = Path(args.sources_directory)
-    if dir_path.is_file() and dir_path.suffix == ".toml":
-        directory = dir_path.parent
-        filename = dir_path.name
-    else:
-        directory = dir_path
-        filename = args.config
+    config_path = Path(args.config_toml)
+    if config_path.is_file():
+        assert config_path.suffix == ".toml"
+        sources_directory = config_path.parent
 
-    source_dir_root = directory.parent.resolve()
+    else:
+        sources_directory = config_path
+        config_path /= "./.builtin_fs.toml"
+
+    config = load_builtin_fs_toml(config_path)
+
+    source_dir_root = sources_directory.parent.resolve()
     logging.debug(f"looking for files in the source dir {source_dir_root}")
 
     # Determine the builtin_fs directory
-    if args.builtin_fs is None:
-        # assume the intent is to configure in the builtin_fs source
-        # via the bootstrap CMakeLists
-        # so the output directory is the parent of the script / namespace name
-        output_dir = Path(__file__).parent / args.namespace_name
+    # the priority is:
+    # the args --builtin-fs
+    # the TOML config file
+    # the defailt is ./builtin_fs
+    if args.builtin_fs is not None:
+        builtin_fs_path = Path(args.builtin_fs)
+        logging.debug(f"got builtin_fs path from args: {builtin_fs_path}")
+
+    elif "builtin_fs" in config:
+        builtin_fs_path = Path(config["builtin_fs"])
+        logging.debug(f"got builtin_fs path from TOML: {builtin_fs_path}")
 
     else:
-        output_dir = Path(args.builtin_fs)
+        builtin_fs_path = Path("./builtin_fs")
+        logging.debug(f"set default builtin_fs path: {builtin_fs_path}")
 
+    if builtin_fs_path.is_absolute():
+        output_dir = builtin_fs_path
+    else:
+        output_dir = sources_directory / builtin_fs_path
+
+    logging.debug(f"final builtin_fs directory path: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
     root_name = output_dir.name
 
-    config = load_builtin_fs_toml(directory, filename)
-    matched_files = match_config(directory, config)
-    logging.debug(f"matched_files list in {directory}: {matched_files}")
+    matched_files = match_config(sources_directory, config)
+    logging.debug(f"matched_files list in {sources_directory}: {matched_files}")
 
     sources_dict = sources_to_nested_dict(matched_files)
     #pprint(sources_dict)
