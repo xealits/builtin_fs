@@ -1,3 +1,29 @@
+"""
+Convert arbitrary files into builtin_fs .cpp within CMake subdirectories.
+
+The argparse program is configured by a TOML config file. If something is
+missing in the config file, hardcoded defaults are used. The commandline
+arguments override the TOML config.
+
+The program looks for source files following the TOML config glob parameters
+under the directory that contains the TOML config file. It creates a builtin_fs
+directory tree with Cpp sources and headers under the path that is given by the
+--builtin-fs commandline parameter, or as builtin_fs parameter in the TOML, or
+as "builtin_fs/" default.
+
+Config parameters:
+* builtin_fs - a string with a relative or absolute path for the output
+directory, where the CMakeLists.txt and all the Cpp sources are written.
+* glob - a list of str with wild card expressions for glob.glob module.
+* any other string - a subdirectory name, with specific glob parameters.
+
+Example of TOML for GLSL shader sources and images under textures/ dir:
+    glob = ["./**/*glsl"]
+
+    [textures]
+    glob = ["*.png", "img.jpg", "wall.jpg"]
+"""
+
 import argparse
 from collections import defaultdict
 from glob import glob
@@ -419,7 +445,9 @@ def sources_to_builtin_fs(source_paths: list, builtin_fs_dir: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Convert source files into builtin_fs .cpp")
+    parser = argparse.ArgumentParser(
+            description=__doc__,
+            formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("config_toml", type=str, help="Path to the TOML config file or a directory that contains .builtin_fs.toml")
 
     parser.add_argument(
