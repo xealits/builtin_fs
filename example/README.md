@@ -61,7 +61,7 @@ includes the headers as in `test.cpp`:
 #include "my_builtin_fs/images/fs.hpp"
 
 int main() {
-  auto& a_file = my_builtin_fs::images::wall_small_jpg;
+  const my_builtin_fs::FileBuffer& a_file = my_builtin_fs::images::wall_small_jpg;
 
   {
     // structured binding
@@ -81,6 +81,43 @@ int main() {
 }
 ```
 
+The files like `my_builtin_fs::images::wall_small_jpg` have `FileBuffer` type,
+which is just an alias to `std::pair<unsigned char*, size_t>. See in the
+generated `fs.hpp` headers:
+```
+// my_builtin_fs/my_builtin_fs/fs.hpp
+#pragma once
+#include "my_builtin_fs/type_aliases.hpp"
+
+namespace my_builtin_fs {
+namespace images {
+extern const FileBuffer wall_small_jpg;
+};
+};
+
+// my_builtin_fs/type_aliases.hpp
+#pragma once
+#include <cstddef>
+#include <utility>
+
+namespace my_builtin_fs {
+using FileContentType = unsigned char;
+using FileBuffer = std::pair<FileContentType* const, size_t>;
+};
+```
+
+The used types `FileContentType` and `FileBuffer` are just aliases to
+language-standard types, `unsigned char` and `std::pair` respectively.
+It is nice that they are not custom types per a `builtin_fs` instance.
+Potentially, you can make multiple `builtin_fs`, from separate TOML files,
+and mix and match them, without declaration collisions on `FileBuffer` etc.
+
+The file are declared as `const`, although that's not necessary. It seems
+reasonable to make embedded files `const`, and pass `const` pointers to them.
+Supporting mutable files would imply making correct containers around them,
+so that the user has a clear and safe way to work with them. I don't need that
+now. It may be something to add in future.
+
 The underlying data is stored in standard types: `std::pair`, `unsigned char*`
 and `size_t`. The namespaces only alias the `std::pair`. So, you can create
 multiple `builtin_fs` instances, and the types will cooperate.
@@ -97,6 +134,8 @@ $ cmake --build build
 [100%] Linking CXX executable test
 [100%] Built target test
 $ ./build/test
+file size: 30482
+contents byte: 255
 file size: 30482
 contents byte: 255
 ```

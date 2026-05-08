@@ -2,7 +2,7 @@
 #include "my_builtin_fs/images/fs.hpp"
 
 int main() {
-  auto& a_file = my_builtin_fs::images::wall_small_jpg;
+  const my_builtin_fs::FileBuffer& a_file = my_builtin_fs::images::wall_small_jpg;
 
   {
     // structured binding
